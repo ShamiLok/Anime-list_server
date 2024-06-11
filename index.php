@@ -25,16 +25,13 @@ function add_row($row) {
     fclose($fp);
 }
 
-function delete_row_by_number($number, $csv_file) {
-    error_log('asd');
+function delete_row_by_id($id, $csv_file) {
     $rows = [];
     $fp = fopen($csv_file, "r");
-    $i = 0;
     while ($row = fgetcsv($fp)) {
-        if ($i != $number) {
+        if ($row[0] != $id) {
             $rows[] = $row;
         }
-        $i++;
     }
     fclose($fp);
     $fp = fopen($csv_file, "w");
@@ -59,8 +56,7 @@ switch ($method) {
         break;
     case "DELETE":
         parse_str($_SERVER["QUERY_STRING"], $query);
-        $number = $query["number"] + 1;
-        delete_row_by_number($number, $csv_file);
+        delete_row_by_id($query["number"], $csv_file);
         http_response_code(200);
         break;
 }
