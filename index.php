@@ -9,13 +9,10 @@ if (isset($_GET["type"])) {
         $csv_file = "willwatch.csv";
     } else {
         http_response_code(400);
-        echo "Invalid type parameter";
+        // echo "Invalid type parameter";
+        echo json_encode(["status" => "error", "message" => "Invalid type parameter"]);
         return;
-    }
-} else {
-    http_response_code(400);
-    echo "Missing type parameter";
-    return;
+    } 
 }
 
 function add_row($row) {
@@ -41,14 +38,39 @@ function delete_row_by_id($id, $csv_file) {
     fclose($fp);
 }
 
+function get_last_id($csv_file) {
+    $fp = fopen($csv_file, "r");
+    fseek($fp, -2, SEEK_END);
+    $last_line = '';
+    while ($char = fgetc($fp)) { 
+        if ($char === "\n") {
+            break;
+        }
+        $last_line = $char . $last_line;
+    }
+    fclose($fp);
+    $last_row = str_getcsv($last_line);
+    $last_id = $last_row[0];
+    return $last_id;
+}
+
+
 $method = $_SERVER["REQUEST_METHOD"];
 switch ($method) {
     case "GET":
-        $fp = fopen($csv_file, "r");
-        while ($row = fgetcsv($fp)) {
-            echo implode(",", $row) . "\r\n";
+        if (isset($_GET["lastid"])) {
+            $last_id = get_last_id($csv_file);
+            echo $last_id;
+            return;
+        } else {
+            $fp = fopen($csv_file, "r");
+            $rows = [];
+            while ($row = fgetcsv($fp)) {
+                $rows[] = $row;
+            }
+            fclose($fp);
+            echo json_encode($rows, JSON_UNESCAPED_UNICODE);
         }
-        fclose($fp);
         break;
     case "POST":
         $row = $_POST;
