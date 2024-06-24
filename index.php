@@ -1,4 +1,73 @@
 <?php
+// idk how this authentication works
+function authenticateUser($username, $password) {
+    if ($username === 'exampleUser' && $password === 'password') {
+        return true;
+    }
+    return false;
+}
+
+function base64UrlEncode($data) {
+    return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
+}
+
+function generateJWT($payload, $secret) {
+    $header = json_encode(['typ' => 'JWT', 'alg' => 'HS256']);
+    $base64UrlHeader = base64UrlEncode($header);
+    $base64UrlPayload = base64UrlEncode(json_encode($payload));
+    $signature = hash_hmac('sha256', $base64UrlHeader . "." . $base64UrlPayload, $secret, true);
+    $base64UrlSignature = base64UrlEncode($signature);
+    return $base64UrlHeader . "." . $base64UrlPayload . "." . $base64UrlSignature;
+}
+
+$secret_key = "uwu";
+
+function base64UrlDecode($data) {
+    $padding = 4 - (strlen($data) % 4);
+    $data .= str_repeat('=', $padding);
+    return base64_decode(strtr($data, '-_', '+/'));
+}
+
+function verifyJWT($jwt, $secret) {
+    $parts = explode('.', $jwt);
+    if (count($parts) !== 3) {
+        return false;
+    }
+
+    list($header, $payload, $signature) = $parts;
+    $validSignature = hash_hmac('sha256', $header . "." . $payload, $secret, true);
+    $base64UrlValidSignature = base64UrlEncode($validSignature);
+    if (hash_equals($base64UrlValidSignature, $signature)) {
+        $decodedPayload = json_decode(base64UrlDecode($payload), true);
+        return $decodedPayload;
+    } else {
+        return false;
+    }
+}
+
+function authenticate() {
+    $headers = apache_request_headers();
+    if (!isset($headers['Authorization'])) {
+        http_response_code(401);
+        echo json_encode(["status" => "error", "message" => "Unauthorized"]);
+        exit();
+    }
+    $authHeader = $headers['Authorization'];
+    list($jwt) = sscanf($authHeader, 'Bearer %s');
+    if (!$jwt) {
+        http_response_code(401);
+        echo json_encode(["status" => "error", "message" => "Unauthorized"]);
+        exit();
+    }
+    $decodedPayload = verifyJWT($jwt, $GLOBALS['secret_key']);
+    if (!$decodedPayload) {
+        http_response_code(401);
+        echo json_encode(["status" => "error", "message" => "Unauthorized"]);
+        exit();
+    }
+    return $decodedPayload;
+}
+
 $csv_file = "";
 
 if (isset($_GET["type"])) {
@@ -9,7 +78,6 @@ if (isset($_GET["type"])) {
         $csv_file = "willwatch.csv";
     } else {
         http_response_code(400);
-        // echo "Invalid type parameter";
         echo json_encode(["status" => "error", "message" => "Invalid type parameter"]);
         return;
     } 
@@ -58,27 +126,95 @@ function get_last_id($csv_file) {
 $method = $_SERVER["REQUEST_METHOD"];
 switch ($method) {
     case "GET":
-        if (isset($_GET["lastid"])) {
-            $last_id = get_last_id($csv_file);
-            echo $last_id;
-            return;
-        } else {
-            $fp = fopen($csv_file, "r");
-            $rows = [];
-            while ($row = fgetcsv($fp)) {
-                $rows[] = $row;
+        if (authenticate()) {
+            if (isset($_GET["lastid"])) {
+                $last_id = get_last_id($csv_file);
+                echo $last_id;
+                return;
+            } else if (isset($_GET["type"])) {
+                $fp = fopen($csv_file, "r");
+                $json = array();
+                while ($row = fgetcsv($fp)) {
+                    $type = $_GET["type"];
+                    if ($type == "main") {
+                        $json[] = array(
+                            "ID" => $row[0],
+                            "Name" => $row[1],
+                            "Progress" => $row[2],
+                            "ProgressType" => $row[3],
+                            "Notes" => $row[4]
+                        );
+                    } else if ($type == "willwatch") {
+                        $json[] = array(
+                            "ID" => $row[0],
+                            "Name" => $row[1],
+                            "Notes" => $row[2]
+                        );
+                    }
+                }
+                fclose($fp);
+                
+                header('Content-Type: application/json');
+                echo json_encode($json, JSON_UNESCAPED_UNICODE);
+            } else {
+                http_response_code(405);
+                echo json_encode(["status" => "error", "message" => ":3"]);
             }
-            fclose($fp);
-            echo json_encode($rows, JSON_UNESCAPED_UNICODE);
+        } else {
+            http_response_code(405);
+            echo json_encode(["status" => "error", "message" => "Bad token"]);
         }
         break;
     case "POST":
-        $row = $_POST;
-        add_row($row);
+        $headers = getallheaders();
+        if($headers['Type'] == 'addRow') {
+            if (authenticate()) {
+                $row = $_POST;
+                add_row($row);
+                http_response_code(200);
+            } else {
+                echo json_encode(["status" => "error", "message" => "Bad token"]);
+                http_response_code(400);
+            }
+            break;
+        } else if ($headers['Type'] == 'login'){
+            $username = $_POST['username'];
+            $password = $_POST['password'];
+            if (authenticateUser($username, $password)) {
+                $payload = [
+                    "iss" => "your_issuer",
+                    "aud" => "your_audience",
+                    "iat" => time(),
+                    "nbf" => time() + 10,
+                    "exp" => time() + 3600,
+                    "data" => [
+                        "username" => $username
+                    ]
+                ];
+                $jwt = generateJWT($payload, $secret_key);
+                echo json_encode(["status" => "success", "token" => $jwt]);
+                http_response_code(200);
+            } else {
+                http_response_code(401);
+                echo json_encode(["status" => "error", "message" => "Invalid credentials"]);
+            }
+        } else if ($headers['Type'] == 'tokenCheck'){
+            authenticate();
+            echo json_encode(["status" => "success", "message" => "good"]);
+            http_response_code(200);
+        } else {
+            http_response_code(405);
+            echo json_encode(["status" => "error", "message" => ":3"]);
+        }
         break;
     case "DELETE":
-        parse_str($_SERVER["QUERY_STRING"], $query);
-        delete_row_by_id($query["number"], $csv_file);
-        http_response_code(200);
+        if (authenticate()) {
+            parse_str($_SERVER["QUERY_STRING"], $query);
+            delete_row_by_id($query["number"], $csv_file);
+            http_response_code(200);
+        } else {
+            http_response_code(400);
+            echo json_encode(["status" => "error", "message" => "Bad token"]);
+        }
         break;
 }
