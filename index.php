@@ -47,12 +47,12 @@ function verifyJWT($jwt, $secret) {
 
 function authenticate() {
     $headers = apache_request_headers();
-    if (!isset($headers['Authorization'])) {
+    if (!isset($headers['authorization'])) {
         http_response_code(401);
         echo json_encode(["status" => "error", "message" => "Unauthorized"]);
         exit();
     }
-    $authHeader = $headers['Authorization'];
+    $authHeader = $headers['authorization'];
     list($jwt) = sscanf($authHeader, 'Bearer %s');
     if (!$jwt) {
         http_response_code(401);
@@ -167,9 +167,10 @@ switch ($method) {
         break;
     case "POST":
         $headers = getallheaders();
-        if($headers['Type'] == 'addRow') {
+        header("Access-Control-Allow-Origin: *"); 
+        if($headers['type'] == 'addrow') {
             if (authenticate()) {
-                $row = $_POST;
+                $row = json_decode(file_get_contents('php://input'), true);
                 add_row($row);
                 http_response_code(200);
             } else {
@@ -177,9 +178,10 @@ switch ($method) {
                 http_response_code(400);
             }
             break;
-        } else if ($headers['Type'] == 'login'){
-            $username = $_POST['username'];
-            $password = $_POST['password'];
+        } else if ($headers['type'] == 'login'){
+            $data = json_decode(file_get_contents('php://input'), true);
+            $username = $data['username'];
+            $password = $data['password'];
             if (authenticateUser($username, $password)) {
                 $payload = [
                     "iss" => "your_issuer",
@@ -198,7 +200,7 @@ switch ($method) {
                 http_response_code(401);
                 echo json_encode(["status" => "error", "message" => "Invalid credentials"]);
             }
-        } else if ($headers['Type'] == 'tokenCheck'){
+        } else if ($headers['type'] == 'tokencheck'){
             authenticate();
             echo json_encode(["status" => "success", "message" => "good"]);
             http_response_code(200);
