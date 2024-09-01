@@ -1,4 +1,24 @@
 <?php
+date_default_timezone_set('Asia/Yekaterinburg');
+
+// Функция для логгирования запросов
+function logRequest($requestType, $requestBody, $requestHeaders, $remoteAddr, $requestUrl = null) {
+    $logFile = 'server.log';
+    if (!file_exists($logFile)) {
+        file_put_contents($logFile, ''); // Создаем файл, если его нет
+    }
+    $logData = [
+        'timestamp' => date('Y-m-d H:i:s'),
+        'remote_addr' => $remoteAddr,
+        'type' => $requestType,
+        'body' => $requestBody,
+        'headers' => $requestHeaders,
+        'url' => $requestUrl
+    ];
+    $logEntry = json_encode($logData) . PHP_EOL . PHP_EOL;
+    file_put_contents($logFile, $logEntry, FILE_APPEND);
+}
+
 // idk how this authentication works
 function authenticateUser($username, $password) {
     if ($username === 'exampleUser' && $password === 'password') {
@@ -80,7 +100,7 @@ if (isset($_GET["type"])) {
         http_response_code(400);
         echo json_encode(["status" => "error", "message" => "Invalid type parameter"]);
         return;
-    } 
+    }
 }
 
 function add_row($row) {
@@ -110,7 +130,7 @@ function get_last_id($csv_file) {
     $fp = fopen($csv_file, "r");
     fseek($fp, -2, SEEK_END);
     $last_line = '';
-    while ($char = fgetc($fp)) { 
+    while ($char = fgetc($fp)) {
         if ($char === "\n") {
             break;
         }
@@ -122,8 +142,20 @@ function get_last_id($csv_file) {
     return $last_id;
 }
 
-
 $method = $_SERVER["REQUEST_METHOD"];
+$requestType = $method;
+$requestBody = file_get_contents('php://input');
+$requestHeaders = getallheaders();
+$remoteAddr = $_SERVER['REMOTE_ADDR'];
+$requestUrl = null;
+
+if ($method === 'GET') {
+    $requestUrl = $_SERVER['REQUEST_URI'];
+}
+
+// Логгирование запроса
+logRequest($requestType, $requestBody, $requestHeaders, $remoteAddr, $requestUrl);
+
 switch ($method) {
     case "GET":
         if (authenticate()) {
@@ -153,7 +185,7 @@ switch ($method) {
                     }
                 }
                 fclose($fp);
-                
+
                 header('Content-Type: application/json');
                 echo json_encode($json, JSON_UNESCAPED_UNICODE);
             } else {
@@ -167,7 +199,7 @@ switch ($method) {
         break;
     case "POST":
         $headers = getallheaders();
-        header("Access-Control-Allow-Origin: *"); 
+        header("Access-Control-Allow-Origin: *");
         if($headers['type'] == 'addrow') {
             if (authenticate()) {
                 $row = json_decode(file_get_contents('php://input'), true);
